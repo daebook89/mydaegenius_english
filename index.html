@@ -1,0 +1,401 @@
+import React, { useState, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getFirestore, collection, doc, setDoc, onSnapshot } from 'firebase/firestore';
+import { 
+  Trophy, Star, ArrowRight, RefreshCcw, BookOpen, Brain, Rocket, Heart, 
+  Lightbulb, Gamepad2, Award, User, GraduationCap, 
+  Stethoscope, Palette, Plane, HardHat, ListOrdered, X, Sparkles,
+  ChevronRight, Crown
+} from 'lucide-react';
+
+// --- KONFIGURASI FIREBASE ---
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// --- KONFIGURASI LOGO ---
+const USER_LOGO_URL = "https://i.postimg.cc/RCKqpR1P/debook-logo.png"; 
+
+// --- DATA PERMAINAN BERDASARKAN TAHAP (10 PERINGKAT SETIAP SATU) ---
+const QUESTIONS_BY_LEVEL = {
+  easy: [
+    { id: 1, category: 'Kata Nama', instruction: 'Pilih "NOUN" (Kata Nama)', options: ['Run', 'Apple', 'Blue', 'Fast'], answer: 'Apple', explanation: 'Noun ialah kata nama bagi benda, orang, haiwan atau tempat.' },
+    { id: 2, category: 'Warna', instruction: 'Warna bagi pisang (Banana) ialah...', options: ['Red', 'Green', 'Yellow', 'Purple'], answer: 'Yellow', explanation: 'Yellow bermaksud Kuning.' },
+    { id: 3, category: 'Kata Ganti Nama', instruction: '___ am a boy.', options: ['He', 'She', 'I', 'They'], answer: 'I', explanation: 'Subjek "I" sentiasa berpasangan dengan kata kerja "am".' },
+    { id: 4, category: 'Haiwan', instruction: 'Haiwan yang boleh terbang ialah...', options: ['Dog', 'Cat', 'Bird', 'Fish'], answer: 'Bird', explanation: 'Bird bermaksud Burung.' },
+    { id: 5, category: 'Ucapan', instruction: 'Ucapan pada waktu pagi ialah...', options: ['Good Night', 'Good Morning', 'Good Afternoon', 'Goodbye'], answer: 'Good Morning', explanation: 'Good Morning bermaksud Selamat Pagi.' },
+    { id: 6, category: 'Nombor', instruction: 'Pilih ejaan bagi nombor "1"', options: ['One', 'Two', 'Ten', 'Won'], answer: 'One', explanation: 'One ialah nombor satu.' },
+    { id: 7, category: 'Anggota Badan', instruction: 'Kita melihat menggunakan...', options: ['Ears', 'Nose', 'Eyes', 'Mouth'], answer: 'Eyes', explanation: 'Eyes bermaksud mata.' },
+    { id: 8, category: 'Buah-buahan', instruction: 'Buah yang berwarna merah ialah...', options: ['Strawberry', 'Banana', 'Orange', 'Pear'], answer: 'Strawberry', explanation: 'Strawberi biasanya berwarna merah.' },
+    { id: 9, category: 'Sekolah', instruction: 'Kita menulis menggunakan...', options: ['Eraser', 'Pencil', 'Ruler', 'Bag'], answer: 'Pencil', explanation: 'Pencil digunakan untuk menulis.' },
+    { id: 10, category: 'Keluarga', instruction: 'Bapa dalam Bahasa Inggeris ialah...', options: ['Mother', 'Brother', 'Sister', 'Father'], answer: 'Father', explanation: 'Father bermaksud bapa atau ayah.' }
+  ],
+  medium: [
+    { id: 11, category: 'Kata Kerja', instruction: 'Pilih "VERB" (Kata Kerja)', options: ['Table', 'Jump', 'Happy', 'Small'], answer: 'Jump', explanation: 'Verb menunjukkan satu perbuatan atau aksi.' },
+    { id: 12, category: 'Kata Sendi Nama', instruction: 'The ball is ___ the box.', options: ['under', 'in', 'between', 'among'], answer: 'in', explanation: 'In bermaksud di dalam.' },
+    { id: 13, category: 'Tatabahasa', instruction: 'The cat ___ sleeping.', options: ['is', 'are', 'am', 'be'], answer: 'is', explanation: 'Gunakan "is" untuk subjek tunggal (seekor).' },
+    { id: 14, category: 'Jamak (Plural)', instruction: 'Banyak kucing = Many ___', options: ['Cat', 'Cats', 'Cates', 'Caties'], answer: 'Cats', explanation: 'Tambah "s" untuk menunjukkan bilangan banyak (lebih daripada satu).' },
+    { id: 15, category: 'Lawan Kata', instruction: 'Lawan bagi "BIG" (Besar) ialah...', options: ['Large', 'Small', 'Tall', 'Long'], answer: 'Small', explanation: 'Small bermaksud kecil.' },
+    { id: 16, category: 'Hari', instruction: 'Hari selepas Isnin (Monday) ialah...', options: ['Sunday', 'Tuesday', 'Wednesday', 'Friday'], answer: 'Tuesday', explanation: 'Tuesday bermaksud hari Selasa.' },
+    { id: 17, category: 'Bulan', instruction: 'Bulan pertama dalam setahun ialah...', options: ['March', 'May', 'January', 'August'], answer: 'January', explanation: 'January ialah bulan pertama.' },
+    { id: 18, category: 'Cuaca', instruction: 'Apabila air turun dari langit, ia adalah...', options: ['Sunny', 'Rainy', 'Windy', 'Cloudy'], answer: 'Rainy', explanation: 'Rainy bermaksud hari hujan.' },
+    { id: 19, category: 'Pekerjaan', instruction: 'Orang yang membantu doktor ialah...', options: ['Teacher', 'Farmer', 'Nurse', 'Pilot'], answer: 'Nurse', explanation: 'Nurse bermaksud jururawat.' },
+    { id: 20, category: 'Kenderaan', instruction: 'Kenderaan yang mempunyai 4 tayar ialah...', options: ['Bicycle', 'Car', 'Motorcycle', 'Boat'], answer: 'Car', explanation: 'Car (kereta) biasanya mempunyai 4 tayar.' }
+  ],
+  hard: [
+    { id: 21, category: 'Masa Lampau', instruction: 'Past tense bagi "EAT" ialah...', options: ['Eaten', 'Eating', 'Eats', 'Ate'], answer: 'Ate', explanation: 'Ate ialah bentuk masa lampau bagi Eat.' },
+    { id: 22, category: 'Kata Sandang', instruction: '___ elephant is huge.', options: ['A', 'An', 'Some', 'Any'], answer: 'An', explanation: 'Gunakan "An" sebelum kata yang bermula dengan bunyi vokal (a,e,i,o,u).' },
+    { id: 23, category: 'Kata Adverb', instruction: 'He runs very ___.', options: ['Quickly', 'Quick', 'Quicker', 'Quickest'], answer: 'Quickly', explanation: 'Adverb digunakan untuk menerangkan bagaimana sesuatu perbuatan dilakukan.' },
+    { id: 24, category: 'Kata Hubung', instruction: 'I like milk ___ cookies.', options: ['but', 'and', 'or', 'so'], answer: 'and', explanation: 'And (dan) digunakan untuk menyambung dua perkara.' },
+    { id: 25, category: 'Perbandingan', instruction: 'A plane is ___ than a car.', options: ['Fast', 'Faster', 'Fastest', 'More fast'], answer: 'Faster', explanation: 'Gunakan akhiran "er" untuk membandingkan dua benda.' },
+    { id: 26, category: 'Paling (Superlative)', instruction: 'Zirafah adalah haiwan yang ___ (Paling Tinggi).', options: ['Tall', 'Taller', 'Tallest', 'High'], answer: 'Tallest', explanation: 'Tallest bermaksud paling tinggi di antara semua.' },
+    { id: 27, category: 'Jamak Tak Lazim', instruction: 'Plural bagi "CHILD" ialah...', options: ['Childs', 'Children', 'Childrens', 'Childies'], answer: 'Children', explanation: 'Children ialah bentuk jamak khas bagi Child.' },
+    { id: 28, category: 'Perfect Tense', instruction: 'She ___ already finished her homework.', options: ['have', 'has', 'is', 'did'], answer: 'has', explanation: 'Gunakan "has" untuk subjek tunggal dalam Present Perfect.' },
+    { id: 29, category: 'Modal Verb', instruction: 'You ___ brush your teeth every day.', options: ['should', 'could', 'might', 'would'], answer: 'should', explanation: 'Should bermaksud patut, digunakan untuk memberi nasihat.' },
+    { id: 30, category: 'Relative Pronoun', instruction: 'The boy ___ is wearing a red hat is my friend.', options: ['who', 'which', 'where', 'whose'], answer: 'who', explanation: 'Who digunakan untuk merujuk kepada orang.' }
+  ]
+};
+
+const AVATARS = [
+  { id: 'teacher', icon: <GraduationCap size={32} />, label: 'Teacher', color: 'bg-emerald-500' },
+  { id: 'scientist', icon: <Brain size={32} />, label: 'Scientist', color: 'bg-blue-500' },
+  { id: 'doctor', icon: <Stethoscope size={32} />, label: 'Doctor', color: 'bg-red-500' },
+  { id: 'artist', icon: <Palette size={32} />, label: 'Artist', color: 'bg-pink-500' },
+  { id: 'pilot', icon: <Plane size={32} />, label: 'Pilot', color: 'bg-sky-500' },
+  { id: 'engineer', icon: <HardHat size={32} />, label: 'Engineer', color: 'bg-yellow-600' }
+];
+
+const App = () => {
+  const [user, setUser] = useState(null);
+  const [gameState, setGameState] = useState('setup'); // setup, home, difficulty, playing, result
+  const [userData, setUserData] = useState({ name: '', age: '7', sex: 'Lelaki', avatar: 'teacher' });
+  const [difficulty, setDifficulty] = useState('easy');
+  const [gameQuestions, setGameQuestions] = useState([]);
+  const [currentQuestion, setCurrentQuestion] = useState(0);
+  const [score, setScore] = useState(0);
+  const [feedback, setFeedback] = useState(null); 
+  const [answered, setAnswered] = useState(false);
+  const [combo, setCombo] = useState(0);
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [showRanking, setShowRanking] = useState(false);
+  const [personalBest, setPersonalBest] = useState(0);
+
+  // --- AUTH ---
+  useEffect(() => {
+    const initAuth = async () => {
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        await signInWithCustomToken(auth, __initial_auth_token);
+      } else {
+        await signInAnonymously(auth);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, setUser);
+    return () => unsubscribe();
+  }, []);
+
+  // --- FIRESTORE ---
+  useEffect(() => {
+    if (!user) return;
+    const scoresRef = collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard');
+    const unsubscribe = onSnapshot(scoresRef, (snapshot) => {
+      const data = snapshot.docs.map(doc => doc.data());
+      const sorted = data.sort((a, b) => b.score - a.score).slice(0, 15);
+      setLeaderboard(sorted);
+      const myRecord = data.find(d => d.uid === user.uid);
+      if (myRecord) setPersonalBest(myRecord.score);
+    }, (err) => console.error("Firestore error:", err));
+    return () => unsubscribe();
+  }, [user]);
+
+  const saveScore = async (finalScore) => {
+    if (!user) return;
+    if (finalScore > personalBest) {
+      const scoreDoc = doc(db, 'artifacts', appId, 'public', 'data', 'leaderboard', user.uid);
+      await setDoc(scoreDoc, {
+        uid: user.uid,
+        name: userData.name,
+        score: finalScore,
+        avatar: userData.avatar,
+        timestamp: Date.now()
+      }, { merge: true });
+    }
+  };
+
+  // --- HANDLERS ---
+  const handleSetupComplete = (e) => {
+    e.preventDefault();
+    if (userData.name.trim()) setGameState('home');
+  };
+
+  const selectDifficulty = (level) => {
+    setDifficulty(level);
+    const shuffled = [...QUESTIONS_BY_LEVEL[level]].sort(() => Math.random() - 0.5);
+    setGameQuestions(shuffled);
+    setGameState('playing');
+    setCurrentQuestion(0);
+    setScore(0);
+    setCombo(0);
+    setAnswered(false);
+    setFeedback(null);
+  };
+
+  const handleAnswer = (selected) => {
+    if (answered) return;
+    const isCorrect = selected === gameQuestions[currentQuestion].answer;
+    setAnswered(true);
+    if (isCorrect) {
+      const points = difficulty === 'hard' ? 20 : difficulty === 'medium' ? 15 : 10;
+      setScore(prev => prev + points + (combo * 2));
+      setCombo(prev => prev + 1);
+      setFeedback({ correct: true, message: 'SYABAS! ' + gameQuestions[currentQuestion].explanation });
+    } else {
+      setCombo(0);
+      setFeedback({ correct: false, message: 'OPS! ' + gameQuestions[currentQuestion].explanation });
+    }
+  };
+
+  const nextQuestion = () => {
+    if (currentQuestion + 1 < gameQuestions.length) {
+      setCurrentQuestion(prev => prev + 1);
+      setAnswered(false);
+      setFeedback(null);
+    } else {
+      saveScore(score);
+      setGameState('result');
+    }
+  };
+
+  // Logo Component
+  const ActualLogo = ({ isLarge = false }) => (
+    <div className={`flex items-center gap-3 ${isLarge ? 'flex-col' : 'flex-row'}`}>
+      {USER_LOGO_URL ? (
+        <img src={USER_LOGO_URL} alt="Logo" className={`${isLarge ? 'h-24' : 'h-10'} w-auto object-contain mx-auto`} />
+      ) : (
+        <div className={`${isLarge ? 'w-24 h-24' : 'w-10 h-10'} bg-orange-500 rounded-3xl flex items-center justify-center border-4 border-black shadow-[4px_4px_0_rgba(0,0,0,1)]`}>
+          <BookOpen size={isLarge ? 48 : 20} className="text-white" />
+        </div>
+      )}
+      <div className={`flex flex-col ${isLarge ? 'items-center' : 'items-start'} -space-y-1`}>
+        <span className={`${isLarge ? 'text-4xl' : 'text-xl'} font-black italic text-slate-900 uppercase tracking-tighter`}>
+          my<span className="text-orange-500">DAE</span>genius
+        </span>
+        <span className="text-[10px] font-black uppercase tracking-widest bg-black text-white px-3 py-0.5 rounded-full">English Edition</span>
+      </div>
+    </div>
+  );
+
+  const renderRanking = () => (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-sm rounded-[2.5rem] border-8 border-yellow-300 shadow-2xl flex flex-col max-h-[85vh]">
+        <div className="p-6 bg-yellow-400 flex justify-between items-center border-b-4 border-yellow-500/20 text-center">
+          <h2 className="text-xl font-black text-slate-900 uppercase italic">KEDUDUKAN GENIUS 🏆</h2>
+          <button onClick={() => setShowRanking(false)} className="bg-white/50 p-2 rounded-full hover:bg-white/80 transition-colors"><X size={24}/></button>
+        </div>
+        <div className="p-4 overflow-y-auto space-y-3 bg-slate-50 flex-grow pb-10">
+          {leaderboard.map((item, idx) => {
+            const isTop3 = idx < 3;
+            const rankColors = [
+              'bg-gradient-to-r from-yellow-400 to-yellow-600 border-yellow-700 shadow-yellow-200', 
+              'bg-gradient-to-r from-slate-300 to-slate-500 border-slate-600 shadow-slate-200', 
+              'bg-gradient-to-r from-orange-300 to-orange-500 border-orange-600 shadow-orange-200'
+            ];
+
+            return (
+              <div key={idx} className={`flex items-center gap-3 p-3 rounded-2xl border-4 transition-all ${isTop3 ? rankColors[idx] + ' text-white scale-105 my-2 shadow-lg' : 'border-white bg-white text-slate-800'} ${item.uid === user?.uid && !isTop3 ? 'ring-4 ring-orange-400' : ''}`}>
+                <div className="relative">
+                  <span className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs ${isTop3 ? 'bg-white/20' : 'bg-slate-100 text-slate-400'}`}>
+                    {idx + 1}
+                  </span>
+                  {idx === 0 && <Crown className="absolute -top-4 -left-2 text-yellow-300 rotate-[-25deg]" size={20} fill="currentColor" />}
+                </div>
+                
+                <div className={`p-1.5 rounded-lg ${isTop3 ? 'bg-white/30' : AVATARS.find(a => a.id === item.avatar)?.color || 'bg-slate-400'} text-white shadow-sm`}>
+                  {AVATARS.find(a => a.id === item.avatar)?.icon || <User size={18} />}
+                </div>
+                
+                <div className="flex-grow min-w-0 text-left">
+                  <p className="font-black uppercase text-xs truncate leading-tight">{item.name}</p>
+                  <p className={`text-[8px] font-bold uppercase tracking-widest ${isTop3 ? 'text-white/80' : 'text-slate-400'}`}>
+                    {AVATARS.find(a => a.id === item.avatar)?.label || 'Genius'}
+                  </p>
+                </div>
+                
+                <div className="text-right">
+                  <span className={`font-black text-lg leading-none ${isTop3 ? 'text-white' : 'text-blue-600'}`}>{item.score}</span>
+                  <p className={`text-[7px] font-black uppercase ${isTop3 ? 'text-white/60' : 'text-slate-300'}`}>Mata</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+
+  if (gameState === 'setup') return (
+    <div className="min-h-screen bg-yellow-50 flex items-center justify-center p-4">
+      <div className="w-full max-w-sm bg-white rounded-[2.5rem] border-8 border-yellow-200 shadow-2xl p-8">
+        <div className="mb-6 text-center text-center"><ActualLogo isLarge /></div>
+        <form onSubmit={handleSetupComplete} className="space-y-4">
+          <div className="text-left">
+            <label className="text-[10px] font-black uppercase text-orange-600 ml-2 tracking-widest">Nama Penuh</label>
+            <input required type="text" placeholder="Masukkan nama anda..." className="w-full p-4 rounded-2xl border-4 border-yellow-100 font-black text-slate-700 outline-none focus:border-orange-400 shadow-inner" value={userData.name} onChange={(e) => setUserData({...userData, name: e.target.value})} />
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-left">
+            <div>
+              <label className="text-[10px] font-black uppercase text-orange-600 ml-2 tracking-widest">Umur</label>
+              <select className="w-full p-4 rounded-2xl border-4 border-yellow-100 font-black text-slate-700 bg-white" value={userData.age} onChange={(e) => setUserData({...userData, age: e.target.value})}>
+                {[7,8,9,10,11,12].map(age => <option key={age} value={age}>{age} Tahun</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-black uppercase text-orange-600 ml-2 tracking-widest">Jantina</label>
+              <button type="button" onClick={() => setUserData({...userData, sex: userData.sex === 'Lelaki' ? 'Perempuan' : 'Lelaki'})} className="w-full p-4 rounded-2xl border-4 border-yellow-100 font-black text-orange-600 bg-orange-50">{userData.sex}</button>
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] font-black uppercase text-orange-600 tracking-widest block mb-2 italic">Pilih Kerjaya Masa Depan</label>
+            <div className="grid grid-cols-3 gap-2">
+              {AVATARS.map(av => (
+                <button key={av.id} type="button" onClick={() => setUserData({...userData, avatar: av.id})} className={`p-2 rounded-xl border-4 transition-all hover:scale-105 ${userData.avatar === av.id ? 'border-orange-400 bg-orange-50' : 'border-slate-50 opacity-40'}`}>
+                  <div className={`p-1.5 rounded-lg text-white mx-auto w-fit ${av.color}`}>{av.icon}</div>
+                  <span className="text-[8px] font-black uppercase block text-center mt-1 truncate">{av.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <button type="submit" className="w-full py-5 bg-orange-500 text-white font-black text-xl rounded-2xl shadow-[0_6px_0_rgb(194,65,12)] active:translate-y-1 active:shadow-none hover:bg-orange-400 transition-colors">MULA PENGEMBARAAN!</button>
+        </form>
+      </div>
+    </div>
+  );
+
+  if (gameState === 'home') return (
+    <div className="min-h-screen bg-sky-50 flex items-center justify-center p-4">
+      {showRanking && renderRanking()}
+      <div className="w-full max-w-sm bg-white rounded-[2.5rem] border-8 border-sky-100 shadow-2xl overflow-hidden flex flex-col">
+        <div className="p-4 bg-white border-b-4 border-sky-50 flex justify-between items-center">
+          <ActualLogo />
+          <button onClick={() => setShowRanking(true)} className="p-2.5 bg-yellow-400 text-white rounded-2xl hover:bg-yellow-300 transition-colors shadow-md active:scale-95"><ListOrdered size={24}/></button>
+        </div>
+        <div className="p-6">
+          <div className="bg-indigo-600 p-6 rounded-[2rem] text-white relative overflow-hidden mb-4 shadow-xl text-center">
+             <div className="relative z-10 text-left">
+               <div className="bg-yellow-400 text-yellow-900 font-black text-[9px] uppercase px-3 py-1 rounded-full inline-block mb-1 tracking-widest">Markah Tertinggi: {leaderboard[0]?.score || 0}</div>
+               <h1 className="text-3xl font-black italic uppercase leading-tight mb-1">HELLO,<br/>GENIUS!</h1>
+               <p className="text-indigo-100 font-bold italic text-xs">{userData.name}, sedia pilih tahap?</p>
+             </div>
+             <Rocket className="absolute -right-4 -bottom-4 text-white/10" size={100} />
+          </div>
+          
+          <div className="space-y-3">
+             <button onClick={() => selectDifficulty('easy')} className="w-full p-4 bg-emerald-50 text-emerald-700 rounded-2xl border-4 border-emerald-100 flex items-center justify-between group hover:bg-emerald-100 transition-all active:scale-95">
+                <span className="font-black uppercase italic tracking-wider flex items-center gap-2">
+                  <Star size={16} fill="currentColor"/> Tahap Mudah
+                </span>
+                <ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" />
+             </button>
+             <button onClick={() => selectDifficulty('medium')} className="w-full p-4 bg-blue-50 text-blue-700 rounded-2xl border-4 border-blue-100 flex items-center justify-between group hover:bg-blue-100 transition-all active:scale-95">
+                <span className="font-black uppercase italic tracking-wider flex items-center gap-2">
+                  <Award size={16}/> Tahap Sederhana
+                </span>
+                <ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" />
+             </button>
+             <button onClick={() => selectDifficulty('hard')} className="w-full p-4 bg-red-50 text-red-700 rounded-2xl border-4 border-red-100 flex items-center justify-between group hover:bg-red-100 transition-all active:scale-95">
+                <span className="font-black uppercase italic tracking-wider flex items-center gap-2">
+                  <Rocket size={16}/> Tahap Sukar
+                </span>
+                <ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" />
+             </button>
+          </div>
+        </div>
+        <div className="p-3 bg-slate-50 text-center text-[9px] font-black uppercase text-slate-300 italic tracking-[0.3em]">myDAEgenius Global Academy</div>
+      </div>
+    </div>
+  );
+
+  if (gameState === 'playing') {
+    const q = gameQuestions[currentQuestion];
+    const progress = ((currentQuestion + 1) / gameQuestions.length) * 100;
+    return (
+      <div className="min-h-screen bg-green-50 flex items-center justify-center p-4 text-center">
+        <div className="w-full max-w-sm bg-white rounded-[2.5rem] border-8 border-green-100 shadow-2xl p-6 flex flex-col min-h-[580px]">
+          <div className="flex justify-between items-center mb-4 text-center">
+            <div className="bg-slate-900 text-white px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest">
+              {difficulty === 'easy' ? 'Mudah' : difficulty === 'medium' ? 'Sederhana' : 'Sukar'} | Peringkat {currentQuestion + 1} / 10
+            </div>
+            <div className="bg-orange-50 text-orange-600 px-3 py-1.5 rounded-full border-2 border-orange-100 font-black text-xs flex items-center gap-1">
+              <Star size={14} fill="currentColor"/> {score}
+            </div>
+          </div>
+          <div className="w-full h-4 bg-slate-100 rounded-full mb-8 overflow-hidden border-2 border-slate-200">
+            <div className={`h-full transition-all duration-500 ${difficulty === 'easy' ? 'bg-emerald-500' : difficulty === 'medium' ? 'bg-blue-500' : 'bg-red-500'}`} style={{ width: `${progress}%` }}></div>
+          </div>
+          <div className="flex-grow flex flex-col items-center">
+            <span className="bg-yellow-400 text-yellow-900 px-3 py-1 rounded-lg font-black text-[10px] uppercase mb-4 border-2 border-black transform -rotate-1 shadow-sm">
+              {q.category}
+            </span>
+            <h2 className="text-2xl font-black text-slate-800 mb-8 leading-tight tracking-tight">
+              {q.instruction}
+            </h2>
+            <div className="grid grid-cols-1 gap-3 w-full mb-6 text-center">
+              {q.options.map((opt, idx) => (
+                <button key={idx} disabled={answered} onClick={() => handleAnswer(opt)} className={`w-full p-5 rounded-2xl text-xl font-black transition-all border-b-6 ${answered ? opt === q.answer ? 'bg-green-500 text-white border-green-800 shadow-md' : 'bg-slate-50 text-slate-300 border-slate-200 shadow-none' : 'bg-white border-sky-100 text-slate-700 shadow-md hover:-translate-y-1 active:scale-95 active:translate-y-0.5'} `}> 
+                  {opt} 
+                </button>
+              ))}
+            </div>
+          </div>
+          {feedback && (
+            <div className={`p-4 rounded-2xl border-4 animate-in fade-in slide-in-from-bottom-4 duration-300 text-left ${feedback.correct ? 'bg-green-50 border-green-400 text-green-800' : 'bg-red-50 border-red-400 text-red-800'}`}>
+              <div className="flex items-center gap-3">
+                <div className={`p-3 rounded-xl ${feedback.correct ? 'bg-green-500' : 'bg-red-500'} text-white shadow-lg`}>
+                   {feedback.correct ? <Trophy size={24}/> : <Heart size={24} fill="currentColor"/>}
+                </div>
+                <div className="flex-grow text-left">
+                  <p className="font-black text-lg italic leading-none mb-1 uppercase tracking-tighter">{feedback.correct ? 'SYABAS!' : 'CUBA LAGI!'}</p>
+                  <p className="text-[10px] font-bold opacity-80 leading-tight">{feedback.message}</p>
+                </div>
+                <button onClick={nextQuestion} className="bg-slate-900 text-white p-3 rounded-xl shadow-xl active:scale-90 hover:bg-black transition-colors focus:ring-4 ring-slate-300 outline-none">
+                  <ArrowRight size={28}/>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-yellow-50 flex items-center justify-center p-4 text-center">
+      <div className="w-full max-w-sm bg-white rounded-[2.5rem] border-8 border-yellow-200 shadow-2xl p-10 overflow-hidden text-center">
+        <Trophy size={80} className="text-yellow-400 mx-auto mb-6 drop-shadow-2xl animate-bounce" />
+        <h2 className="text-4xl font-black text-slate-800 mb-2 uppercase italic leading-none tracking-tighter">PERMAINAN<br/>TAMAT!</h2>
+        <div className="bg-yellow-100 px-5 py-2 rounded-full border-4 border-yellow-200 inline-block mb-8 font-black text-slate-600 uppercase tracking-widest text-[10px]">Genius: {userData.name}</div>
+        <div className="grid grid-cols-2 gap-4 mb-8 text-center">
+           <div className="bg-sky-50 p-4 rounded-2xl border-4 border-sky-100 shadow-md transform -rotate-2">
+              <p className="text-[9px] font-black text-sky-400 uppercase mb-1">Markah</p>
+              <p className="text-4xl font-black text-sky-600 leading-none">{score}</p>
+           </div>
+           <div className="bg-orange-50 p-4 rounded-2xl border-4 border-orange-100 shadow-md transform rotate-2">
+              <p className="text-[9px] font-black text-orange-400 uppercase mb-1">Terbaik</p>
+              <p className="text-4xl font-black text-orange-600 leading-none">{Math.max(score, personalBest)}</p>
+           </div>
+        </div>
+        <div className="space-y-3">
+          <button onClick={() => setGameState('home')} className="w-full py-5 bg-green-500 text-white font-black text-xl rounded-2xl shadow-[0_6px_0_rgb(21,128,61)] active:translate-y-1 active:shadow-none hover:bg-green-400 transition-all flex items-center justify-center gap-2"> 
+            <RefreshCcw size={24}/> MAIN SEMULA 
+          </button>
+          <button onClick={() => { setScore(0); setGameState('home'); }} className="w-full py-4 bg-slate-100 text-slate-500 font-black text-sm rounded-2xl uppercase tracking-widest hover:bg-slate-200 transition-colors text-center">DASHBOARD</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default App;
